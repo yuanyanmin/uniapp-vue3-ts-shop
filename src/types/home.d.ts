@@ -10,7 +10,6 @@ export type BannerItem = {
   type: number
 }
 
-
 /** 首页-前台类目数据类型 */
 export type CategoryItem = {
   /** 图标路径 */
@@ -54,4 +53,3 @@ export type GuessItem = {
   /** 商品价格 */
   price: number
 }
-
