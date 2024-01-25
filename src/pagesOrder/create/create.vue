@@ -55,10 +55,11 @@ const selectAddress = computed(() => {
   return addressStore.selectedAddress || orderPre.value?.userAddresses.find((v) => v.isDefault)
 })
 
+
 // 提交订单
 const onOrderSubmit = async () => {
   if (!selectAddress.value?.id) {
-    return uni.showToast({ icon: 'none' })
+    return uni.showToast({ icon: 'none', title: '请选择地址' })
   }
   const res = await postMemberOrderAPI({
     addressId: selectAddress.value?.id,
@@ -85,6 +86,15 @@ const onOrderSubmit = async () => {
     >
       <view class="user"> {{ selectAddress.receiver }} {{ selectAddress.contact }}</view>
       <view class="address"> {{ selectAddress.fullLocation }} {{ selectAddress.address }}</view>
+      <text class="icon icon-right"></text>
+    </navigator>
+    <navigator
+      v-else
+      class="shipment"
+      hover-class="none"
+      url="/pagesMember/address/address?from=order"
+    >
+      <view class="address"> 请选择收货地址 </view>
       <text class="icon icon-right"></text>
     </navigator>
 
