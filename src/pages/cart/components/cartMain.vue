@@ -103,7 +103,7 @@ const gotoPayment = () => {
     })
   }
 
-  uni.showToast({ title: '待完善' })
+  uni.navigateTo({ url: '/pagesOrder/create/create' })
 }
 </script>
 
