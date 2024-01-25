@@ -88,4 +88,3 @@ export type SpecValueItem = {
   /** 可选值图片链接 */
   picture: string
 }
-
