@@ -1,7 +1,16 @@
 <script setup lang="ts">
 import { useGuessList } from '@/composables'
-import { onReady } from '@dcloudio/uni-app'
+import { onLoad, onReady } from '@dcloudio/uni-app'
 import { ref } from 'vue'
+import {
+  getMemberOrderByIdAPI,
+  getMemberOrderConsignmentByIdAPI,
+  putMemberOrderReceiptByIdAPI,
+  getMemberOrderLogisticsByIdAPI,
+} from '@/services/order'
+import type { OrderResult, LogisticItem } from '@/types/order'
+import { OrderState, OrderStateList } from '@/services/constants'
+import { getPayWxPayMiniPayAPI, getPayMockAPI } from '@/services/pay'
 
 // 获取屏幕边界到安全区域距离
 const { safeAreaInsets } = uni.getSystemInfoSync()
@@ -39,38 +48,104 @@ const pageInstance = page.at(-1) as any
 // 页面渲染完毕，绑定动画效果
 onReady(() => {
   // 动画效果 导航栏背景色
-  pageInstance.animate('.navbar', [
-    { backgroundColor: 'transparent' },
-    { backgroundColor: '#f8f8f8' },
-  ], 1000, {
+  pageInstance.animate(
+    '.navbar',
+    [{ backgroundColor: 'transparent' }, { backgroundColor: '#f8f8f8' }],
+    1000,
+    {
+      scrollSource: '#scroller',
+      timeRange: 1000,
+      startScrollOffset: 0,
+      endScrollOffset: 50,
+    },
+  )
+
+  // 动画效果 导航栏背景色
+  pageInstance.animate('.navbar .title', [{ color: 'transparent' }, { color: '#000' }], 1000, {
     scrollSource: '#scroller',
     timeRange: 1000,
     startScrollOffset: 0,
-    endScrollOffset: 50
+    endScrollOffset: 50,
   })
 
   // 动画效果 导航栏背景色
-  pageInstance.animate('.navbar .title', [
-    { color: 'transparent' },
-    { color: '#000' },
-  ], 1000, {
+  pageInstance.animate('.navbar .back', [{ color: '#fff' }, { color: '#000' }], 1000, {
     scrollSource: '#scroller',
     timeRange: 1000,
     startScrollOffset: 0,
-    endScrollOffset: 50
-  })
-
-  // 动画效果 导航栏背景色
-  pageInstance.animate('.navbar .back', [
-    { color: 'transparent' },
-    { color: '#000' },
-  ], 1000, {
-    scrollSource: '#scroller',
-    timeRange: 1000,
-    startScrollOffset: 0,
-    endScrollOffset: 50
+    endScrollOffset: 50,
   })
 })
+
+// 获取订单详情
+const order = ref<OrderResult>()
+const getMemberOrderByIdData = async () => {
+  const res = await getMemberOrderByIdAPI(query.id)
+  order.value = res.result
+
+  if (
+    [OrderState.DaiShouHuo, OrderState.DaiPingJia, OrderState.YiWanCheng].includes(
+      order.value.orderState,
+    )
+  ) {
+    getMemberOrderLogisticsByIdData()
+  }
+}
+
+// 获取物流信息
+const logisticsList = ref<LogisticItem[]>([])
+const getMemberOrderLogisticsByIdData = async () => {
+  const res = await getMemberOrderLogisticsByIdAPI(query.id)
+  logisticsList.value = res.result.list
+}
+
+onLoad(() => {
+  getMemberOrderByIdData()
+})
+
+// 倒计时结束
+const onTimeup = () => {
+  order.value.orderState = OrderState.YiQuXiao
+}
+
+// 支付
+const onOrderPay = async () => {
+  if (import.meta.env.DEV) {
+    await getPayMockAPI({ orderId: query.id })
+  } else {
+    const res = await getPayWxPayMiniPayAPI({ orderId: query.id })
+    wx.requestPayment(res.result)
+  }
+
+  // 关闭当前页，再跳转支付结果页
+  uni.redirectTo({ url: `/pagesOrder/payment/payment?id=${query.id}` })
+}
+
+// 是否为开发环境
+const isDev = import.meta.env.DEV
+
+// 模拟发货
+const onOrderSend = async () => {
+  if (isDev) {
+    await getMemberOrderConsignmentByIdAPI(query.id)
+    order.value.orderState = OrderState.DaiShouHuo
+  }
+}
+
+// 模拟收货
+const onOrderConfirm = async () => {
+  // 二次确认弹窗
+  uni.showModal({
+    content: '为保障您的权益，请收到货并确认无误后，再确认收货',
+    success: async (success) => {
+      if (success.confirm) {
+        const res = await putMemberOrderReceiptByIdAPI(query.id)
+        // 更新订单状态
+        order.value = res.result
+      }
+    },
+  })
+}
 </script>
 
 <template>
@@ -84,23 +159,30 @@ onReady(() => {
     </view>
   </view>
   <scroll-view scroll-y class="viewport" id="scroller" @scrolltolower="onScrolltolower">
-    <template v-if="true">
+    <template v-if="order">
       <!-- 订单状态 -->
       <view class="overview" :style="{ paddingTop: safeAreaInsets!.top + 20 + 'px' }">
         <!-- 待付款状态:展示去支付按钮和倒计时 -->
-        <template v-if="true">
+        <template v-if="order.orderState === OrderState.DaiFuKuan">
           <view class="status icon-clock">等待付款</view>
           <view class="tips">
             <text class="money">应付金额: ¥ 99.00</text>
             <text class="time">支付剩余</text>
-            00 时 29 分 59 秒
+            <uni-countdown
+              :second="order.countdown"
+              color="#fff"
+              splitor-color="#fff"
+              :show-day="false"
+              :show-colon="false"
+              @timeup="onTimeup"
+            />
           </view>
-          <view class="button">去支付</view>
+          <view class="button" @tap="onOrderPay">去支付</view>
         </template>
         <!-- 其他订单状态:展示再次购买按钮 -->
         <template v-else>
           <!-- 订单状态文字 -->
-          <view class="status"> 待付款 </view>
+          <view class="status"> {{ OrderStateList[order?.orderState].text }} </view>
           <view class="button-group">
             <navigator
               class="button"
@@ -110,23 +192,36 @@ onReady(() => {
               再次购买
             </navigator>
             <!-- 待发货状态：模拟发货,开发期间使用,用于修改订单状态为已发货 -->
-            <view v-if="false" class="button"> 模拟发货 </view>
+            <view
+              v-if="isDev && order.orderState === OrderState.DaiFaHuo"
+              class="button"
+              @tap="onOrderSend"
+            >
+              模拟发货
+            </view>
+            <view
+              v-if="isDev && order.orderState === OrderState.DaiShouHuo"
+              class="button"
+              @tap="onOrderConfirm"
+            >
+              确认收货
+            </view>
           </view>
         </template>
       </view>
       <!-- 配送状态 -->
       <view class="shipment">
         <!-- 订单物流信息 -->
-        <view v-for="item in 1" :key="item" class="item">
+        <view v-for="item in logisticsList" :key="item.id" class="item">
           <view class="message">
-            您已在广州市天河区黑马程序员完成取件，感谢使用菜鸟驿站，期待再次为您服务。
+            {{ item.text }}
           </view>
-          <view class="date"> 2023-04-14 13:14:20 </view>
+          <view class="date"> {{ item.time }} </view>
         </view>
         <!-- 用户收货地址 -->
         <view class="locate">
-          <view class="user"> 张三 13333333333 </view>
-          <view class="address"> 广东省 广州市 天河区 黑马程序员 </view>
+          <view class="user"> {{ order.receiverContact }}{{ order.receiverMobile }} </view>
+          <view class="address"> {{ order.receiverAddress }} </view>
         </view>
       </view>
 
